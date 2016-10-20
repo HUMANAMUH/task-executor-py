@@ -7,7 +7,6 @@ import inspect
 import json
 import logging
 import traceback
-
 import aiohttp
 import async_timeout
 import yaml
@@ -28,15 +27,17 @@ class TaskExecutor(object):
         self.num_worker = config["num_worker"]
         self.exit_when_done = config["exit_when_done"]
         self.terminate_flag = False
+        self.session = aiohttp.ClientSession(loop=self.loop)
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker)
 
     @staticmethod
     def load(config_file, loop=None):
         with open(config_file, "r") as f:
             return TaskExecutor(yaml.load(f.read()), loop=loop)
 
-    def register(self, type):
+    def register(self, task_type):
         def wrapper(f):
-            self.task_mapping[type] = f
+            self.task_mapping[task_type] = f
             return f
 
         return wrapper
@@ -45,14 +46,15 @@ class TaskExecutor(object):
         # TODO: block/async logic
         self.terminate_flag = True
 
+    def close(self):
+        self.session.close()
+        self.executor.shutdown(wait=True)
+
     def __enter__(self):
-        self.session = aiohttp.ClientSession(loop=self.loop)
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.session.__exit__(exc_type, exc_val, exc_tb)
-        self.executor.__exit__(exc_type, exc_val, exc_tb)
+        self.close()
 
     async def run(self):
         await asyncio.gather(*[self.worker(i) for i in range(self.num_worker)])
@@ -68,11 +70,11 @@ class TaskExecutor(object):
                                          headers={'content-type': 'application/json'}) as response:
                 return await response.text()
 
-    async def task_create(self, type, key, *args, **kwargs):
+    async def task_create(self, task_type, key, *args, **kwargs):
         obj = {
             "pool": self.pool,
-            "type": type,
-            "key": key,
+            "type": task_type,
+            "key": str(key),
             "options": json.dumps({"args": args, "kwargs": kwargs}),
             "tryLimit": self.try_limit,
             "timeout": self.task_timeout
@@ -106,14 +108,14 @@ class TaskExecutor(object):
         return await self.post_json("/task/fail", obj)
 
     async def worker(self, i):
-        logging.info("worker(%d) started" % i)
+        logging.info("worker(%d) started", i)
         while True:
             tasks = json.loads(await self.task_fetch())
             if self.terminate_flag:
                 return
             if len(tasks) == 0:
                 if self.exit_when_done:
-                    logging.info("worker(%d) done. exit" % i)
+                    logging.info("worker(%d) done. exit", i)
                     return
                 else:
                     logging.info("task all done, waiting")
@@ -128,12 +130,12 @@ class TaskExecutor(object):
                         v = await asyncio.wait_for(fut, None)
                         if inspect.isawaitable(v):
                             res = await v
-                            logging.debug("res: %s" % res)
+                            logging.debug("res: %s", res)
                         await self.task_success(t["id"])
-                    except Exception as e:
+                    except:
                         err_trace = traceback.format_exc()
                         logging.error(err_trace)
                         await self.task_fail(t["id"], err_trace)
                 else:
-                    logging.warning("Unknown task type: %s" % repr(t))
+                    logging.warning("Unknown task type: %s", repr(t))
                     await self.task_fail(t["id"], traceback.format_exc())

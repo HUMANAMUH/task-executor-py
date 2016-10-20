@@ -4,4 +4,4 @@ task_timeout: 120
 pool: "test"
 request_timeout: 100
 num_worker: 32
-exit_when_done: false
+exit_when_done: true
