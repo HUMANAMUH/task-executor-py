@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 class TaskExecutor(object):
     def __init__(self, config, loop=None):
-        self.task_mapping = dict()
+        self._task_mapping = dict()
         self.loop = loop if loop is not None else asyncio.get_event_loop()
         self.config = config
         self.server_url = config["server_url"]
@@ -26,7 +26,7 @@ class TaskExecutor(object):
         self.task_timeout = config["task_timeout"]
         self.num_worker = config["num_worker"]
         self.exit_when_done = config["exit_when_done"]
-        self.terminate_flag = False
+        self._terminate_flag = False
         self.session = aiohttp.ClientSession(loop=self.loop)
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker)
 
@@ -37,14 +37,14 @@ class TaskExecutor(object):
 
     def register(self, task_type):
         def wrapper(f):
-            self.task_mapping[task_type] = f
+            self._task_mapping[task_type] = f
             return f
 
         return wrapper
 
     def terminate(self):
         # TODO: block/async logic
-        self.terminate_flag = True
+        self._terminate_flag = True
 
     def close(self):
         self.session.close()
@@ -69,6 +69,18 @@ class TaskExecutor(object):
             async with self.session.post("%s%s" % (self.server_url, path), data=json.dumps(obj).encode("utf-8"),
                                          headers={'content-type': 'application/json'}) as response:
                 return await response.text()
+
+    async def task_schedule(self, task_type, key, datetime, *args, **kwargs):
+        obj = {
+            "pool": self.pool,
+            "type": task_type,
+            "key": str(key),
+            "options": json.dumps({"args": args, "kwargs": kwargs}),
+            "scheduledTime": datetime,
+            "tryLimit": self.try_limit,
+            "timeout": self.task_timeout
+        }
+        return await self.post_json("/task/create", obj)
 
     async def task_create(self, task_type, key, *args, **kwargs):
         obj = {
@@ -100,10 +112,11 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/success", obj)
 
-    async def task_fail(self, task_id, log):
+    async def task_fail(self, task_id, log, delay=0):
         obj = {
             "id": task_id,
-            "log": log
+            "log": log,
+            "delay": delay
         }
         return await self.post_json("/task/fail", obj)
 
@@ -111,7 +124,7 @@ class TaskExecutor(object):
         logging.info("worker(%d) started", i)
         while True:
             tasks = json.loads(await self.task_fetch())
-            if self.terminate_flag:
+            if self._terminate_flag:
                 return
             if len(tasks) == 0:
                 if self.exit_when_done:
@@ -121,8 +134,8 @@ class TaskExecutor(object):
                     logging.info("task all done, waiting")
                     await asyncio.sleep(5)
             for t in tasks:
-                if t["type"] in self.task_mapping:
-                    f = self.task_mapping[t["type"]]
+                if t["type"] in self._task_mapping:
+                    f = self._task_mapping[t["type"]]
                     opts = json.loads(t["options"])
                     try:
                         fut = self.loop.run_in_executor(self.executor,
