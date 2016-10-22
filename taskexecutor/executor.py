@@ -1,4 +1,7 @@
-#!/usr/bin/env python3
+"""
+Task Executor
+"""
+
 
 import asyncio
 import concurrent.futures
@@ -15,6 +18,10 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 class TaskExecutor(object):
+    """
+    task executor
+    """
+
     def __init__(self, config, loop=None):
         self._task_mapping = dict()
         self.loop = loop if loop is not None else asyncio.get_event_loop()
@@ -32,21 +39,36 @@ class TaskExecutor(object):
 
     @staticmethod
     def load(config_file, loop=None):
-        with open(config_file, "r") as f:
-            return TaskExecutor(yaml.load(f.read()), loop=loop)
+        """
+        load executor from a config file
+        """
+        with open(config_file, "r") as fobj:
+            return TaskExecutor(yaml.load(fobj.read()), loop=loop)
 
     def register(self, task_type):
-        def wrapper(f):
-            self._task_mapping[task_type] = f
-            return f
+        """
+        register function which will process the task in specified task_type
+        """
+        def wrapper(func):
+            """
+            simple wrapper which add function func to task_mapping
+            """
+            self._task_mapping[task_type] = func
+            return func
 
         return wrapper
 
     def terminate(self):
+        """
+        terminate workers, which will wait running task being done
+        """
         # TODO: block/async logic
         self._terminate_flag = True
 
     def close(self):
+        """
+        shutdown this executor
+        """
         self.session.close()
         self.executor.shutdown(wait=True)
 
@@ -57,20 +79,26 @@ class TaskExecutor(object):
         self.close()
 
     async def run(self):
+        """
+        run all workers, async return when all workers exited
+        """
         await asyncio.gather(*[self.worker(i) for i in range(self.num_worker)])
 
-    async def get(self, url):
-        with async_timeout.timeout(self.request_timeout):
-            async with self.session.get(url) as response:
-                return await response.text()
-
     async def post_json(self, path, obj):
+        """
+        post a json to server, return async json result
+        """
         with async_timeout.timeout(self.request_timeout):
-            async with self.session.post("%s%s" % (self.server_url, path), data=json.dumps(obj).encode("utf-8"),
-                                         headers={'content-type': 'application/json'}) as response:
-                return await response.text()
+            url = "%s%s" % (self.server_url, path)
+            data = json.dumps(obj).encode("utf-8")
+            headers = {'content-type': 'application/json'}
+            async with self.session.post(url, data=data, headers=headers) as response:
+                return json.loads(await response.text())
 
     async def task_schedule(self, task_type, key, datetime, *args, **kwargs):
+        """
+        create new task scheduled at a specified time
+        """
         obj = {
             "pool": self.pool,
             "type": task_type,
@@ -83,6 +111,9 @@ class TaskExecutor(object):
         return await self.post_json("/task/create", obj)
 
     async def task_create(self, task_type, key, *args, **kwargs):
+        """
+        create new task which scheduled immediately
+        """
         obj = {
             "pool": self.pool,
             "type": task_type,
@@ -94,6 +125,9 @@ class TaskExecutor(object):
         return await self.post_json("/task/create", obj)
 
     async def task_fetch(self):
+        """
+        fetch task from task queue
+        """
         obj = {
             "pool": self.pool,
             "limit": 1
@@ -101,18 +135,27 @@ class TaskExecutor(object):
         return await self.post_json("/task/start", obj)
 
     async def task_delete(self, task_id):
+        """
+        delete task from task manager
+        """
         obj = {
             "id": task_id
         }
         return await self.post_json("/task/delete", obj)
 
     async def task_success(self, task_id):
+        """
+        succeed a specified task when task has succefully done
+        """
         obj = {
             "id": task_id
         }
         return await self.post_json("/task/success", obj)
 
     async def task_fail(self, task_id, log, delay=0):
+        """
+        fail a specified task when task has failed
+        """
         obj = {
             "id": task_id,
             "log": log,
@@ -120,10 +163,49 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/fail", obj)
 
+    async def task_block(self, task_id):
+        """
+        block a pending task
+        """
+        obj = {
+            "id": task_id
+        }
+        return await self.post_json("/task/block", obj)
+
+    async def task_unblock(self, task_id):
+        """
+        unblock a blocked task
+        """
+        obj = {
+            "id": task_id
+        }
+        return await self.post_json("/task/unblock", obj)
+
+    async def task_recover(self, task_id):
+        """
+        recover a failed task
+        """
+        obj = {
+            "id": task_id
+        }
+        return await self.post_json("/task/recover", obj)
+
+    async def pool_recover(self):
+        """
+        recover this pool's failed taskes
+        """
+        obj = {
+            "pool": self.pool
+        }
+        return await self.post_json("/pool/recover", obj)
+
     async def worker(self, i):
+        """
+        start worker i on executors event loop
+        """
         logging.info("worker(%d) started", i)
         while True:
-            tasks = json.loads(await self.task_fetch())
+            tasks = await self.task_fetch()
             if self._terminate_flag:
                 return
             if len(tasks) == 0:
@@ -133,22 +215,22 @@ class TaskExecutor(object):
                 else:
                     logging.info("task all done, waiting")
                     await asyncio.sleep(5)
-            for t in tasks:
-                if t["type"] in self._task_mapping:
-                    f = self._task_mapping[t["type"]]
-                    opts = json.loads(t["options"])
+            for task in tasks:
+                if task["type"] in self._task_mapping:
+                    func = self._task_mapping[task["type"]]
+                    opts = json.loads(task["options"])
                     try:
-                        fut = self.loop.run_in_executor(self.executor,
-                                                        functools.partial(f, *opts["args"], **opts["kwargs"]))
-                        v = await asyncio.wait_for(fut, None)
-                        if inspect.isawaitable(v):
-                            res = await v
+                        action = functools.partial(func, *opts["args"], **opts["kwargs"])
+                        fut = self.loop.run_in_executor(self.executor, action)
+                        func_res = await asyncio.wait_for(fut, None)
+                        if inspect.isawaitable(func_res):
+                            res = await func_rec
                             logging.debug("res: %s", res)
-                        await self.task_success(t["id"])
+                        await self.task_success(task["id"])
                     except:
                         err_trace = traceback.format_exc()
                         logging.error(err_trace)
-                        await self.task_fail(t["id"], err_trace)
+                        await self.task_fail(task["id"], err_trace)
                 else:
-                    logging.warning("Unknown task type: %s", repr(t))
-                    await self.task_fail(t["id"], traceback.format_exc())
+                    logging.warning("Unknown task type: %s", repr(task))
+                    await self.task_fail(task["id"], traceback.format_exc())
