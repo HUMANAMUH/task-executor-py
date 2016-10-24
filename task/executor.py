@@ -2,31 +2,69 @@
 Task Executor
 """
 
-import asyncio
-import concurrent.futures
-import functools
-import inspect
 import json
+import functools
 import logging
 import traceback
+import inspect
+import concurrent.futures
+import asyncio
 import aiohttp
 import async_timeout
 import yaml
-import sys
 
-logging.basicConfig(level=logging.DEBUG)
-
-def async_ref_cnt(f):
+def async_count(crt_f):
+    """
+    count of async calls, if terminate_falg is True, it will wait all async call finish to exit
+    """
+    @functools.wraps(crt_f)
     async def wrapped(self, *args, **kwargs):
-        self._ref_cnt += 1
-        logging.debug("ref_cnt: %d", self._ref_cnt)
-        res = await f(self, *args, **kwargs)
-        self._ref_cnt -= 1
-        logging.debug("ref_cnt: %d", self._ref_cnt)
-        if self._ref_cnt == 0 and self._terminate_flag is True:
-            sys.exit(0)
-        return res
+        """
+        wrapped async call
+        will automatically increase async count when start, and dcrease when exit
+        """
+        self.ref_cnt += 1
+        logging.debug("ref_cnt: %d", self.ref_cnt)
+        try:
+            return await crt_f(self, *args, **kwargs)
+        finally:
+            self.ref_cnt -= 1
+            logging.debug("ref_cnt: %d", self.ref_cnt)
+            if self.ref_cnt == 0 and self.terminate_flag is True:
+                self.close()
     return wrapped
+
+def with_retry(limit=None, interval=None):
+    def wrapper(crt_f):
+        @functools.wraps(crt_f)
+        async def wrapped(*args, **kwargs):
+            try_count = 0
+            exec_self = args[0] if len(args) > 0 else None
+            retry_limit = exec_self.retry_limit if exec_self.retry_limit is not None else limit
+            retry_interval = \
+                exec_self.retry_interval if exec_self.retry_interval is not None else interval
+            while limit is None or try_count < retry_limit:
+                if exec_self is not None and exec_self.terminate_flag is True:
+                    return None
+                try_count += 1
+                try:
+                    if try_count > 1:
+                        logging.debug("retry: %d", try_count)
+                    return await crt_f(*args, **kwargs)
+                except OSError as ex:
+                    logging.warning("OSError: %s", ex)
+                    await asyncio.sleep(retry_interval)
+                except RuntimeError as ex:
+                    logging.error(ex)
+                    err_trace = traceback.format_exc()
+                    logging.error(err_trace)
+                    return None
+                except:
+                    err_trace = traceback.format_exc()
+                    logging.error(err_trace)
+                    await asyncio.sleep(retry_interval)
+        return wrapped
+    return wrapper
 
 
 class TaskExecutor(object):
@@ -45,12 +83,13 @@ class TaskExecutor(object):
         self.task_timeout = config["task_timeout"]
         self.num_worker = config["num_worker"]
         self.exit_when_done = config["exit_when_done"]
-        self.reconnect_interval = config["reconnect_interval"]
-        self._terminate_flag = False
+        self.retry_interval = config["retry_interval"]
+        self.retry_limit = config["retry_limit"]
+        self.terminate_flag = False
         self.session = aiohttp.ClientSession(loop=self.loop)
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker)
         self.loop.add_signal_handler(2, self.terminate)
-        self._ref_cnt = 0
+        self.ref_cnt = 0
 
     @staticmethod
     def load(config_file, loop=None):
@@ -78,8 +117,7 @@ class TaskExecutor(object):
         terminate workers, which will wait running task being done
         """
         # TODO: block/async logic
-        self._terminate_flag = True
-        sys.exit(0)
+        self.terminate_flag = True
 
     def close(self):
         """
@@ -100,36 +138,20 @@ class TaskExecutor(object):
         """
         await asyncio.gather(*[self.worker(i) for i in range(self.num_worker)])
 
-    @async_ref_cnt
     async def post_json(self, path, obj):
         """
         post a json to server, return async json result
         """
-        try:
-            if self._terminate_flag is True:
-                return None
-            with async_timeout.timeout(self.request_timeout):
-                url = "%s%s" % (self.server_url, path)
-                data = json.dumps(obj).encode("utf-8")
-                headers = {'content-type': 'application/json'}
-                async with self.session.post(url, data=data, headers=headers) as response:
-                    return json.loads(await response.text())
-        except OSError as e:
-            logging.warning("connection failed with %s", e)
-            await asyncio.sleep(self.reconnect_interval)
-            return await self.post_json(path, obj)
-        except RuntimeError as e:
-            logging.error(e)
-            err_trace = traceback.format_exc()
-            logging.error(err_trace)
-            return None
-        except Exception as e:
-            err_trace = traceback.format_exc()
-            logging.error(err_trace)
-            await asyncio.sleep(16)
-            return await self.post_json(path, obj)
+        with async_timeout.timeout(self.request_timeout):
+            url = "%s%s" % (self.server_url, path)
+            data = json.dumps(obj).encode("utf-8")
+            headers = {'content-type': 'application/json'}
+            async with self.session.post(url, data=data, headers=headers) as response:
+                return json.loads(await response.text())
 
-    @async_ref_cnt
+
+    @async_count
+    @with_retry(limit=5)
     async def task_schedule(self, task_type, key, datetime, *args, **kwargs):
         """
         create new task scheduled at a specified time
@@ -145,7 +167,8 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/create", obj)
 
-    @async_ref_cnt
+    @async_count
+    @with_retry(limit=5)
     async def task_create(self, task_type, key, *args, **kwargs):
         """
         create new task which scheduled immediately
@@ -160,7 +183,8 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/create", obj)
 
-    @async_ref_cnt
+    @async_count
+    @with_retry(limit=3)
     async def task_fetch(self):
         """
         fetch task from task queue
@@ -171,7 +195,8 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/start", obj)
 
-    @async_ref_cnt
+    @async_count
+    @with_retry(limit=3)
     async def task_delete(self, task_id):
         """
         delete task from task manager
@@ -181,7 +206,8 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/delete", obj)
 
-    @async_ref_cnt
+    @async_count
+    @with_retry(limit=5)
     async def task_success(self, task_id):
         """
         succeed a specified task when task has succefully done
@@ -191,7 +217,8 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/success", obj)
 
-    @async_ref_cnt
+    @async_count
+    @with_retry(limit=5)
     async def task_fail(self, task_id, log, delay=0):
         """
         fail a specified task when task has failed
@@ -203,7 +230,8 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/fail", obj)
 
-    @async_ref_cnt
+    @async_count
+    @with_retry(limit=5)
     async def task_block(self, task_id):
         """
         block a pending task
@@ -213,7 +241,8 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/block", obj)
 
-    @async_ref_cnt
+    @async_count
+    @with_retry(limit=5)
     async def task_unblock(self, task_id):
         """
         unblock a blocked task
@@ -223,7 +252,8 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/unblock", obj)
 
-    @async_ref_cnt
+    @async_count
+    @with_retry(limit=5)
     async def task_recover(self, task_id):
         """
         recover a failed task
@@ -233,7 +263,8 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/recover", obj)
 
-    @async_ref_cnt
+    @async_count
+    @with_retry(limit=5)
     async def pool_recover(self):
         """
         recover this pool's failed taskes
@@ -243,16 +274,19 @@ class TaskExecutor(object):
         }
         return await self.post_json("/pool/recover", obj)
 
-    @async_ref_cnt
+    @async_count
     async def worker(self, i):
         """
         start worker i on executors event loop
         """
         logging.info("worker(%d) started", i)
         while True:
-            tasks = await self.task_fetch()
-            if tasks is None and self._terminate_flag:
+            if self.terminate_flag is True:
+                logging.info("worker(%d) terminated", i)
                 return
+            tasks = await self.task_fetch()
+            if tasks is None:
+                continue
             if len(tasks) == 0:
                 if self.exit_when_done:
                     logging.info("worker(%d) done. exit", i)
