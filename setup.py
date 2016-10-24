@@ -9,5 +9,11 @@ setup(
         author_email = "Earthson.Lu@gmail.com",
         description = "task-executor for task-manager",
         license = "Apache License 2.0",
-        url = "https://github.com/HUMANAMUH/task-executor-py/tree/master/taskexecutor"
+        url = "https://github.com/HUMANAMUH/task-executor-py/tree/master/taskexecutor",
+
+        install_requires=[
+            "aiohttp >=1.0.5",
+            "pyyaml"
+        ]
+
         )
