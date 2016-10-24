@@ -17,4 +17,3 @@ async def add_hello_task():
 
 loop.run_until_complete(add_hello_task())
 loop.run_until_complete(tx.run())
-tx.close()

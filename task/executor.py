@@ -2,7 +2,6 @@
 Task Executor
 """
 
-
 import asyncio
 import concurrent.futures
 import functools
@@ -13,8 +12,21 @@ import traceback
 import aiohttp
 import async_timeout
 import yaml
+import sys
 
 logging.basicConfig(level=logging.DEBUG)
+
+def async_ref_cnt(f):
+    async def wrapped(self, *args, **kwargs):
+        self._ref_cnt += 1
+        logging.debug("ref_cnt: %d", self._ref_cnt)
+        res = await f(self, *args, **kwargs)
+        self._ref_cnt -= 1
+        logging.debug("ref_cnt: %d", self._ref_cnt)
+        if self._ref_cnt == 0 and self._terminate_flag is True:
+            sys.exit(0)
+        return res
+    return wrapped
 
 
 class TaskExecutor(object):
@@ -33,9 +45,12 @@ class TaskExecutor(object):
         self.task_timeout = config["task_timeout"]
         self.num_worker = config["num_worker"]
         self.exit_when_done = config["exit_when_done"]
+        self.reconnect_interval = config["reconnect_interval"]
         self._terminate_flag = False
         self.session = aiohttp.ClientSession(loop=self.loop)
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker)
+        self.loop.add_signal_handler(2, self.terminate)
+        self._ref_cnt = 0
 
     @staticmethod
     def load(config_file, loop=None):
@@ -64,6 +79,7 @@ class TaskExecutor(object):
         """
         # TODO: block/async logic
         self._terminate_flag = True
+        sys.exit(0)
 
     def close(self):
         """
@@ -84,17 +100,36 @@ class TaskExecutor(object):
         """
         await asyncio.gather(*[self.worker(i) for i in range(self.num_worker)])
 
+    @async_ref_cnt
     async def post_json(self, path, obj):
         """
         post a json to server, return async json result
         """
-        with async_timeout.timeout(self.request_timeout):
-            url = "%s%s" % (self.server_url, path)
-            data = json.dumps(obj).encode("utf-8")
-            headers = {'content-type': 'application/json'}
-            async with self.session.post(url, data=data, headers=headers) as response:
-                return json.loads(await response.text())
+        try:
+            if self._terminate_flag is True:
+                return None
+            with async_timeout.timeout(self.request_timeout):
+                url = "%s%s" % (self.server_url, path)
+                data = json.dumps(obj).encode("utf-8")
+                headers = {'content-type': 'application/json'}
+                async with self.session.post(url, data=data, headers=headers) as response:
+                    return json.loads(await response.text())
+        except OSError as e:
+            logging.warning("connection failed with %s", e)
+            await asyncio.sleep(self.reconnect_interval)
+            return await self.post_json(path, obj)
+        except RuntimeError as e:
+            logging.error(e)
+            err_trace = traceback.format_exc()
+            logging.error(err_trace)
+            return None
+        except Exception as e:
+            err_trace = traceback.format_exc()
+            logging.error(err_trace)
+            await asyncio.sleep(16)
+            return await self.post_json(path, obj)
 
+    @async_ref_cnt
     async def task_schedule(self, task_type, key, datetime, *args, **kwargs):
         """
         create new task scheduled at a specified time
@@ -110,6 +145,7 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/create", obj)
 
+    @async_ref_cnt
     async def task_create(self, task_type, key, *args, **kwargs):
         """
         create new task which scheduled immediately
@@ -124,6 +160,7 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/create", obj)
 
+    @async_ref_cnt
     async def task_fetch(self):
         """
         fetch task from task queue
@@ -134,6 +171,7 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/start", obj)
 
+    @async_ref_cnt
     async def task_delete(self, task_id):
         """
         delete task from task manager
@@ -143,6 +181,7 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/delete", obj)
 
+    @async_ref_cnt
     async def task_success(self, task_id):
         """
         succeed a specified task when task has succefully done
@@ -152,6 +191,7 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/success", obj)
 
+    @async_ref_cnt
     async def task_fail(self, task_id, log, delay=0):
         """
         fail a specified task when task has failed
@@ -163,6 +203,7 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/fail", obj)
 
+    @async_ref_cnt
     async def task_block(self, task_id):
         """
         block a pending task
@@ -172,6 +213,7 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/block", obj)
 
+    @async_ref_cnt
     async def task_unblock(self, task_id):
         """
         unblock a blocked task
@@ -181,6 +223,7 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/unblock", obj)
 
+    @async_ref_cnt
     async def task_recover(self, task_id):
         """
         recover a failed task
@@ -190,6 +233,7 @@ class TaskExecutor(object):
         }
         return await self.post_json("/task/recover", obj)
 
+    @async_ref_cnt
     async def pool_recover(self):
         """
         recover this pool's failed taskes
@@ -199,6 +243,7 @@ class TaskExecutor(object):
         }
         return await self.post_json("/pool/recover", obj)
 
+    @async_ref_cnt
     async def worker(self, i):
         """
         start worker i on executors event loop
@@ -206,7 +251,7 @@ class TaskExecutor(object):
         logging.info("worker(%d) started", i)
         while True:
             tasks = await self.task_fetch()
-            if self._terminate_flag:
+            if tasks is None and self._terminate_flag:
                 return
             if len(tasks) == 0:
                 if self.exit_when_done:
