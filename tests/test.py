@@ -1,5 +1,5 @@
 import asyncio
-import taskexecutor.executor as texec
+import task.executor as texec
 
 import random
 
