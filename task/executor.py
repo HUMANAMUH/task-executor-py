@@ -87,7 +87,7 @@ class TaskExecutor(object):
         self.retry_limit = config["retry_limit"]
         self.terminate_flag = False
         self.session = aiohttp.ClientSession(loop=self.loop)
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker)
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker * 3)
         self.loop.add_signal_handler(2, self.terminate)
         self.ref_cnt = 0
 
@@ -116,7 +116,6 @@ class TaskExecutor(object):
         """
         terminate workers, which will wait running task being done
         """
-        # TODO: block/async logic
         self.terminate_flag = True
 
     def close(self):
@@ -149,6 +148,13 @@ class TaskExecutor(object):
             async with self.session.post(url, data=data, headers=headers) as response:
                 return json.loads(await response.text())
 
+    async def wait_blocking(self, func, *args, **kwargs):
+        """
+        wait a block action
+        """
+        action = functools.partial(func, *args, **kwargs)
+        fut = self.loop.run_in_executor(self.executor, action)
+        return await asyncio.wait_for(fut, None)
 
     @async_count
     @with_retry(limit=5)
@@ -299,9 +305,7 @@ class TaskExecutor(object):
                     func = self._task_mapping[task["type"]]
                     opts = json.loads(task["options"])
                     try:
-                        action = functools.partial(func, *opts["args"], **opts["kwargs"])
-                        fut = self.loop.run_in_executor(self.executor, action)
-                        func_res = await asyncio.wait_for(fut, None)
+                        func_res = await self.wait_blocking(func, *opts["args"], **opts["kwargs"])
                         if inspect.isawaitable(func_res):
                             res = await func_rec
                             logging.debug("res: %s", res)
