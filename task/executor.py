@@ -13,6 +13,9 @@ import aiohttp
 import async_timeout
 import yaml
 
+logger = logging.getLogger("task-executor-py")
+logger.propagate = False
+
 class UnexpectedResponceCode(Exception):
     def __init__(self, code):
         super().__init__("Unexpected responce code: %d" % code)
@@ -28,12 +31,12 @@ def async_count(crt_f):
         will automatically increase async count when start, and dcrease when exit
         """
         self.ref_cnt += 1
-        logging.debug("ref_cnt: %d", self.ref_cnt)
+        logger.debug("ref_cnt: %d", self.ref_cnt)
         try:
             return await crt_f(self, *args, **kwargs)
         finally:
             self.ref_cnt -= 1
-            logging.debug("ref_cnt: %d", self.ref_cnt)
+            logger.debug("ref_cnt: %d", self.ref_cnt)
             if self.ref_cnt == 0 and self.terminate_flag is True:
                 self.close()
     return wrapped
@@ -53,22 +56,22 @@ def with_retry(limit=None, interval=None):
                 try_count += 1
                 try:
                     if try_count > 1:
-                        logging.debug("retry: %d", try_count)
+                        logger.debug("retry: %d", try_count)
                     return await crt_f(*args, **kwargs)
                 except OSError as ex:
-                    logging.warning("OSError: %s", ex)
+                    logger.warning("OSError: %s", ex)
                     await asyncio.sleep(retry_interval)
                 except UnexpectedResponceCode as ex:
-                    logging.warning(ex)
+                    logger.warning(ex)
                     await asyncio.sleep(retry_interval)
                 except RuntimeError as ex:
-                    logging.error(ex)
+                    logger.error(ex)
                     err_trace = traceback.format_exc()
-                    logging.error(err_trace)
+                    logger.error(err_trace)
                     return None
                 except:
                     err_trace = traceback.format_exc()
-                    logging.error(err_trace)
+                    logger.error(err_trace)
                     await asyncio.sleep(retry_interval)
         return wrapped
     return wrapper
@@ -96,11 +99,19 @@ class TaskExecutor(object):
         self.exit_when_done = config["exit_when_done"]
         self.retry_interval = config["retry_interval"]
         self.retry_limit = config["retry_limit"]
+        self.log_level = config["log_level"]
+        self.log_file = config["log_file"]
+        self.log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         self.terminate_flag = False
         self.session = aiohttp.ClientSession(loop=self.loop)
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker * 3)
         self.loop.add_signal_handler(2, self.terminate)
         self.ref_cnt = 0
+
+        fh = logging.FileHandler(self.log_file)
+        fh.setLevel(self.log_level)
+        fh.setFormatter(logging.Formatter(self.log_format))
+        logger.addHandler(fh)
 
     @staticmethod
     def load(config_file, loop=None):
@@ -108,7 +119,7 @@ class TaskExecutor(object):
         load executor from a config file
         """
         with open(config_file, "r") as fobj:
-            return TaskExecutor(yaml.load(fobj.read()), loop=loop)
+            return TaskExecutor(yaml.load(fobj.read())["task-executor"], loop=loop)
 
     def register(self, task_type):
         """
@@ -174,7 +185,7 @@ class TaskExecutor(object):
                 if response.status != 200:
                     raise UnexpectedResponceCode(response.status)
                 txt = await response.text()
-                logging.debug("%s: %s", url, txt)
+                logger.debug("%s: %s", url, txt)
                 return json.loads(txt)
 
     async def wait_blocking(self, func, *args, **kwargs):
@@ -341,20 +352,20 @@ class TaskExecutor(object):
         """
         start worker i on executors event loop
         """
-        logging.info("worker(%d) started", i)
+        logger.info("worker(%d) started", i)
         while True:
             if self.terminate_flag is True:
-                logging.info("worker(%d) terminated", i)
+                logger.info("worker(%d) terminated", i)
                 return
             tasks = await self.task_fetch()
             if tasks is None:
                 continue
             if len(tasks) == 0:
                 if self.exit_when_done:
-                    logging.info("worker(%d) done. exit", i)
+                    logger.info("worker(%d) done. exit", i)
                     return
                 else:
-                    logging.info("task all done, waiting")
+                    logger.info("task all done, waiting")
                     await asyncio.sleep(5)
             for task in tasks:
                 if task["type"] in self._task_mapping:
@@ -365,12 +376,12 @@ class TaskExecutor(object):
                             res = await func(opts)
                         else:
                             res = await self.wait_blocking(func, opts)
-                        logging.debug("res: %s", res)
+                        logger.debug("res: %s", res)
                         await self.task_success(task["id"])
                     except:
                         err_trace = traceback.format_exc()
-                        logging.error(err_trace)
+                        logger.error(err_trace)
                         await self.task_fail(task["id"], err_trace)
                 else:
-                    logging.warning("Unknown task type: %s", repr(task))
+                    logger.warning("Unknown task type: %s", repr(task))
                     await self.task_fail(task["id"], traceback.format_exc())
