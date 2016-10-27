@@ -13,6 +13,10 @@ import aiohttp
 import async_timeout
 import yaml
 
+class UnexpectedResponceCode(Exception):
+    def __init__(self, code):
+        super().__init__("Unexpected responce code: %d" % code)
+
 def async_count(crt_f):
     """
     count of async calls, if terminate_falg is True, it will wait all async call finish to exit
@@ -54,6 +58,9 @@ def with_retry(limit=None, interval=None):
                 except OSError as ex:
                     logging.warning("OSError: %s", ex)
                     await asyncio.sleep(retry_interval)
+                except UnexpectedResponceCode as ex:
+                    logging.warning(ex)
+                    await asyncio.sleep(retry_interval)
                 except RuntimeError as ex:
                     logging.error(ex)
                     err_trace = traceback.format_exc()
@@ -71,6 +78,10 @@ class TaskExecutor(object):
     """
     task executor
     """
+    arg_opts = {
+        "args": [],
+        "kwargs": {}
+    }
 
     def __init__(self, config, loop=None):
         self._task_mapping = dict()
@@ -112,6 +123,20 @@ class TaskExecutor(object):
 
         return wrapper
 
+    def arg_register(self, task_type):
+        """
+        register function which accepts {"args": [], "kwargs": {}}
+        """
+        def wrapper(func):
+            "simple wrapper"
+            async def async_f(opts):
+                return await func(*opts["args"], **opts["kwargs"])
+            def sync_f(opts):
+                return func(*opts["args"], **opts["kwargs"])
+            self._task_mapping[task_type] = async_f if inspect.iscoroutinefunction(func) else sync_f
+            func
+        return wrapper
+
     def terminate(self):
         """
         terminate workers, which will wait running task being done
@@ -146,7 +171,11 @@ class TaskExecutor(object):
             data = json.dumps(obj).encode("utf-8")
             headers = {'content-type': 'application/json'}
             async with self.session.post(url, data=data, headers=headers) as response:
-                return json.loads(await response.text())
+                if response.status != 200:
+                    raise UnexpectedResponceCode(response.status)
+                txt = await response.text()
+                logging.debug("%s: %s", url, txt)
+                return json.loads(txt)
 
     async def wait_blocking(self, func, *args, **kwargs):
         """
@@ -158,16 +187,18 @@ class TaskExecutor(object):
 
     @async_count
     @with_retry(limit=5)
-    async def task_schedule(self, task_type, key, datetime, *args, **kwargs):
+    async def task_schedule(self, task_type, key, scheduled_at, group=None, options={}):
         """
         create new task scheduled at a specified time
+        @scheduled_at timestamp in milliseconds for task to start
         """
         obj = {
             "pool": self.pool,
             "type": task_type,
             "key": str(key),
-            "options": json.dumps({"args": args, "kwargs": kwargs}),
-            "scheduledTime": datetime,
+            "group": str(group) if group is not None else None,
+            "options": json.dumps(options),
+            "scheduledAt": scheduled_at,
             "tryLimit": self.try_limit,
             "timeout": self.task_timeout
         }
@@ -175,7 +206,7 @@ class TaskExecutor(object):
 
     @async_count
     @with_retry(limit=5)
-    async def task_create(self, task_type, key, *args, **kwargs):
+    async def task_create(self, task_type, key, group=None, options={}):
         """
         create new task which scheduled immediately
         """
@@ -183,7 +214,8 @@ class TaskExecutor(object):
             "pool": self.pool,
             "type": task_type,
             "key": str(key),
-            "options": json.dumps({"args": args, "kwargs": kwargs}),
+            "group": str(group) if group is not None else None,
+            "options": json.dumps(options),
             "tryLimit": self.try_limit,
             "timeout": self.task_timeout
         }
@@ -281,6 +313,30 @@ class TaskExecutor(object):
         return await self.post_json("/pool/recover", obj)
 
     @async_count
+    @with_retry(limit=5)
+    async def last_task(self, task_type):
+        """
+        get last task of specified task_type
+        """
+        obj = {
+            "pool": self.pool,
+            "type": task_type
+        }
+        return await self.post_json("/task/last", obj)
+
+    @async_count
+    @with_retry(limit=5)
+    async def group_last(self, group):
+        """
+        get last task of specified task group
+        """
+        obj = {
+            "pool": self.pool,
+            "group": group
+        }
+        return await self.post_json("/group/last", obj)
+
+    @async_count
     async def worker(self, i):
         """
         start worker i on executors event loop
@@ -305,10 +361,11 @@ class TaskExecutor(object):
                     func = self._task_mapping[task["type"]]
                     opts = json.loads(task["options"])
                     try:
-                        func_res = await self.wait_blocking(func, *opts["args"], **opts["kwargs"])
-                        if inspect.isawaitable(func_res):
-                            res = await func_rec
-                            logging.debug("res: %s", res)
+                        if inspect.iscoroutinefunction(func):
+                            res = await func(opts)
+                        else:
+                            res = await self.wait_blocking(func, opts)
+                        logging.debug("res: %s", res)
                         await self.task_success(task["id"])
                     except:
                         err_trace = traceback.format_exc()
