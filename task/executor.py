@@ -344,7 +344,9 @@ class TaskExecutor(object):
             "pool": self.pool,
             "type": task_type
         }
-        return await self.post_json("/task/last", obj)
+        ans = await self.post_json("/task/last", obj)
+        ans["scheduledAt"] = nano_to_datetime(ans["shceduledAt"])
+        return ans
 
     @async_count
     @with_retry(limit=5)
@@ -356,7 +358,9 @@ class TaskExecutor(object):
             "pool": self.pool,
             "group": group
         }
-        return await self.post_json("/group/last", obj)
+        ans = await self.post_json("/group/last", obj)
+        ans["scheduledAt"] = nano_to_datetime(ans["shceduledAt"])
+        return ans
 
     @async_count
     async def worker(self, i):
