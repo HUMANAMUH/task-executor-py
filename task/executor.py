@@ -12,6 +12,7 @@ import asyncio
 import aiohttp
 import async_timeout
 import yaml
+from datetime import datetime
 
 logger = logging.getLogger("task-executor-py")
 logger.propagate = False
@@ -40,6 +41,15 @@ def async_count(crt_f):
             if self.ref_cnt == 0 and self.terminate_flag is True:
                 self.close()
     return wrapped
+
+def nano_to_datetime(nano_time):
+    return datetime.fromtimestamp(nano_time * 1e-9)
+
+def datetime_to_nano(dt):
+    x = dt.timestamp()
+    a = int(x)
+    b = int((x - a) * 1e9)
+    return a * 1000000000 + b
 
 def with_retry(limit=None, interval=None):
     def wrapper(crt_f):
@@ -201,7 +211,7 @@ class TaskExecutor(object):
     async def task_schedule(self, task_type, key, scheduled_at, group=None, options={}):
         """
         create new task scheduled at a specified time
-        @scheduled_at timestamp in milliseconds for task to start
+        @scheduled_at datetime for task to start
         """
         obj = {
             "pool": self.pool,
@@ -209,7 +219,7 @@ class TaskExecutor(object):
             "key": str(key),
             "group": str(group) if group is not None else None,
             "options": json.dumps(options),
-            "scheduledAt": scheduled_at,
+            "scheduledAt": datetime_to_nano(scheduled_at),
             "tryLimit": self.try_limit,
             "timeout": self.task_timeout
         }
@@ -243,6 +253,7 @@ class TaskExecutor(object):
             "limit": 1
         }
         return await self.post_json("/task/start", obj)
+
 
     @async_count
     @with_retry(limit=3)
