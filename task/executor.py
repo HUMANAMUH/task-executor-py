@@ -151,9 +151,9 @@ class TaskExecutor(object):
         def wrapper(func):
             "simple wrapper"
             async def async_f(opts):
-                return await func(*opts["args"], **opts["kwargs"])
+                return await func(*opts.get("args", []), **opts.get("kwargs", {}))
             def sync_f(opts):
-                return func(*opts["args"], **opts["kwargs"])
+                return func(*opts.get("args", []), **opts.get("kwargs", {}))
             self._task_mapping[task_type] = async_f if inspect.iscoroutinefunction(func) else sync_f
             func
         return wrapper
@@ -345,7 +345,8 @@ class TaskExecutor(object):
             "type": task_type
         }
         ans = await self.post_json("/task/last", obj)
-        ans["scheduledAt"] = nano_to_datetime(ans["shceduledAt"])
+        if ans is not None:
+            ans["scheduledAt"] = nano_to_datetime(ans["shceduledAt"])
         return ans
 
     @async_count
@@ -359,7 +360,8 @@ class TaskExecutor(object):
             "group": group
         }
         ans = await self.post_json("/group/last", obj)
-        ans["scheduledAt"] = nano_to_datetime(ans["shceduledAt"])
+        if ans is not None:
+            ans["scheduledAt"] = nano_to_datetime(ans["shceduledAt"])
         return ans
 
     @async_count
