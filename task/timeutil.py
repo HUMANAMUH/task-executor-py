@@ -1,13 +1,13 @@
 from datetime import datetime, time as tm, timedelta
 
 def nano_to_datetime(nano_time):
-    return datetime.fromtimestamp(nano_time * 1e-9)
+    return datetime.fromtimestamp(nano_time * 1e-3)
 
 def datetime_to_nano(dt):
     x = dt.timestamp()
     a = int(x)
-    b = int((x - a) * 1e9)
-    return a * 1000000000 + b
+    b = int((x - a) * 1e3)
+    return a * 1000 + b
 
 def date_to_datetime(dt):
     return datetime.combine(dt, tm.min)
