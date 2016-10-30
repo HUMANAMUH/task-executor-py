@@ -12,6 +12,10 @@ def datetime_to_nano(dt):
 def date_to_datetime(dt):
     return datetime.combine(dt, tm.min)
 
-def date_range(start, end, step=timedelta(days=1)):
+def get_date(dt):
+    return date_to_datetime(dt.date())
+
+def date_range(start, end, step_days=1):
+    step = timedelta(days=1)
     base = [start + step * i for i in range(0, (end - start) // step + 1)]
     return [(b, b + step if b + step <= end else end) for b in base]
