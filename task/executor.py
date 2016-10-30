@@ -70,7 +70,8 @@ def with_retry(limit=None, interval=None):
                     err_trace = traceback.format_exc()
                     logger.error(err_trace)
                     return None
-                except:
+                except Exception as e:
+                    logger.error(e)
                     err_trace = traceback.format_exc()
                     logger.error(err_trace)
                     await asyncio.sleep(retry_interval)
