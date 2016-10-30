@@ -12,7 +12,7 @@ import asyncio
 import aiohttp
 import async_timeout
 import yaml
-from datetime import datetime
+from task.timeutil import nano_to_datetime, datetime_to_nano
 
 logger = logging.getLogger("task-executor-py")
 logger.propagate = False
@@ -41,15 +41,6 @@ def async_count(crt_f):
             if self.ref_cnt == 0 and self.terminate_flag is True:
                 self.close()
     return wrapped
-
-def nano_to_datetime(nano_time):
-    return datetime.fromtimestamp(nano_time * 1e-9)
-
-def datetime_to_nano(dt):
-    x = dt.timestamp()
-    a = int(x)
-    b = int((x - a) * 1e9)
-    return a * 1000000000 + b
 
 def with_retry(limit=None, interval=None):
     def wrapper(crt_f):
