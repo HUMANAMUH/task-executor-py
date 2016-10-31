@@ -88,7 +88,7 @@ class TaskExecutor(object):
         "kwargs": {}
     }
 
-    def __init__(self, config, loop=None):
+    def __init__(self, config, loop=None, multi_process=False):
         self._task_mapping = dict()
         self.loop = loop if loop is not None else asyncio.get_event_loop()
         self.config = config
@@ -106,7 +106,9 @@ class TaskExecutor(object):
         self.log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         self.terminate_flag = False
         self.session = aiohttp.ClientSession(loop=self.loop)
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker * 3)
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker * 3) \
+            if multi_process is False \
+            else concurrent.futures.ProcessPoolExecutor(max_workers=self.num_worker * 3)
         self.loop.add_signal_handler(2, self.terminate)
         self.ref_cnt = 0
 
@@ -116,12 +118,12 @@ class TaskExecutor(object):
         logger.addHandler(fh)
 
     @staticmethod
-    def load(config_file, loop=None):
+    def load(config_file, loop=None, multi_process=False):
         """
         load executor from a config file
         """
         with open(config_file, "r") as fobj:
-            return TaskExecutor(yaml.load(fobj.read())["task-executor"], loop=loop)
+            return TaskExecutor(yaml.load(fobj.read())["task-executor"], loop=loop, multi_process=multi_process)
 
     def register(self, task_type):
         """
