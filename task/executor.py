@@ -144,9 +144,10 @@ class TaskExecutor(object):
         """
         def wrapper(func):
             "simple wrapper"
+            @functools.wraps(func)
             async def async_f(opts):
                 return await func(*opts.get("args", []), **opts.get("kwargs", {}))
-            sync_f = lambda opts: func(*opts.get("args", []), **opts.get("kwargs", {}))
+            sync_f = functools.wraps(func)(lambda opts: func(*opts.get("args", []), **opts.get("kwargs", {})))
             self._task_mapping[task_type] = async_f if inspect.iscoroutinefunction(func) else sync_f
             func
         return wrapper
