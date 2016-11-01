@@ -90,6 +90,7 @@ class TaskExecutor(object):
 
     def __init__(self, config, loop=None, multi_process=False):
         self._task_mapping = dict()
+        self._expand_arg_opts = dict()
         self.loop = loop if loop is not None else asyncio.get_event_loop()
         self.config = config
         self.server_url = config["server_url"]
@@ -125,7 +126,7 @@ class TaskExecutor(object):
         with open(config_file, "r") as fobj:
             return TaskExecutor(yaml.load(fobj.read())["task-executor"], loop=loop, multi_process=multi_process)
 
-    def register(self, task_type):
+    def register(self, task_type, expand_param=False):
         """
         register function which will process the task in specified task_type
         """
@@ -134,22 +135,9 @@ class TaskExecutor(object):
             simple wrapper which add function func to task_mapping
             """
             self._task_mapping[task_type] = func
+            self._expand_arg_opts[task_type] = expand_param
             return func
 
-        return wrapper
-
-    def arg_register(self, task_type):
-        """
-        register function which accepts {"args": [], "kwargs": {}}
-        """
-        def wrapper(func):
-            "simple wrapper"
-            @functools.wraps(func)
-            async def async_f(opts):
-                return await func(*opts.get("args", []), **opts.get("kwargs", {}))
-            sync_f = functools.wraps(func)(lambda opts: func(*opts.get("args", []), **opts.get("kwargs", {})))
-            self._task_mapping[task_type] = async_f if inspect.iscoroutinefunction(func) else sync_f
-            func
         return wrapper
 
     def terminate(self):
@@ -381,12 +369,19 @@ class TaskExecutor(object):
             for task in tasks:
                 if task["type"] in self._task_mapping:
                     func = self._task_mapping[task["type"]]
+                    do_expand = self._expand_arg_opts.get(task["type"], False)
                     opts = json.loads(task["options"])
                     try:
-                        if inspect.iscoroutinefunction(func):
-                            res = await func(opts)
+                        if do_expand is True:
+                            if inspect.iscoroutinefunction(func):
+                                res = await func(*opts.get("args", []), **opts.get("kwargs")) 
+                            else:
+                                res = await self.wait_blocking(func, *opts.get("args", []), **opts.get("kwargs"))
                         else:
-                            res = await self.wait_blocking(func, opts)
+                            if inspect.iscoroutinefunction(func):
+                                res = await func(opts)
+                            else:
+                                res = await self.wait_blocking(func, opts)
                         logger.debug("res: %s", res)
                         await self.task_success(task["id"])
                     except:
