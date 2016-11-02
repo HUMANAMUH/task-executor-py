@@ -12,7 +12,7 @@ import asyncio
 import aiohttp
 import async_timeout
 import yaml
-from task.timeutil import nano_to_datetime, datetime_to_nano
+from task.timeutil import timestamp_to_datetime, datetime_to_timestamp
 
 logger = logging.getLogger("task-executor-py")
 logger.propagate = False
@@ -201,7 +201,7 @@ class TaskExecutor(object):
             "key": str(key),
             "group": str(group) if group is not None else None,
             "options": json.dumps(options),
-            "scheduledAt": datetime_to_nano(scheduled_at),
+            "scheduledAt": datetime_to_timestamp(scheduled_at),
             "tryLimit": self.try_limit,
             "timeout": self.task_timeout
         }
@@ -328,7 +328,7 @@ class TaskExecutor(object):
         }
         ans = await self.post_json("/task/last", obj)
         if ans is not None:
-            ans["scheduledAt"] = nano_to_datetime(ans["shceduledAt"])
+            ans["scheduledAt"] = timestamp_to_datetime(ans["shceduledAt"])
         return ans
 
     @async_count
@@ -343,7 +343,7 @@ class TaskExecutor(object):
         }
         ans = await self.post_json("/group/last", obj)
         if ans is not None:
-            ans["scheduledAt"] = nano_to_datetime(ans["shceduledAt"])
+            ans["scheduledAt"] = timestamp_to_datetime(ans["shceduledAt"])
         return ans
 
     @async_count

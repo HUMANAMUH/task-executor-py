@@ -1,9 +1,9 @@
 from datetime import datetime, time as tm, timedelta
 
-def nano_to_datetime(nano_time):
+def timestamp_to_datetime(nano_time):
     return datetime.fromtimestamp(nano_time * 1e-3)
 
-def datetime_to_nano(dt):
+def datetime_to_timestamp(dt):
     x = dt.timestamp()
     a = int(x)
     b = int((x - a) * 1e3)
