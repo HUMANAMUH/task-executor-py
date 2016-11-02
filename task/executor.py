@@ -342,6 +342,7 @@ class TaskExecutor(object):
             "group": group
         }
         ans = await self.post_json("/group/last", obj)
+        logger.debug(ans)
         if ans is not None:
             ans["scheduledAt"] = timestamp_to_datetime(ans["shceduledAt"])
         return ans
