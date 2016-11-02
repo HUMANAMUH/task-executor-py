@@ -328,7 +328,7 @@ class TaskExecutor(object):
         }
         ans = await self.post_json("/task/last", obj)
         if ans is not None:
-            ans["scheduledAt"] = timestamp_to_datetime(ans["shceduledAt"])
+            ans["scheduledAt"] = timestamp_to_datetime(ans["scheduledAt"])
         return ans
 
     @async_count
@@ -342,9 +342,8 @@ class TaskExecutor(object):
             "group": group
         }
         ans = await self.post_json("/group/last", obj)
-        logger.debug(ans)
         if ans is not None:
-            ans["scheduledAt"] = timestamp_to_datetime(ans["shceduledAt"])
+            ans["scheduledAt"] = timestamp_to_datetime(ans["scheduledAt"])
         return ans
 
     @async_count
