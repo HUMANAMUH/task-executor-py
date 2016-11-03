@@ -126,7 +126,7 @@ class TaskExecutor(object):
         with open(config_file, "r") as fobj:
             return TaskExecutor(yaml.load(fobj.read())["task-executor"], loop=loop, multi_process=multi_process)
 
-    def register(self, task_type, expand_param=False):
+    def register(self, task_type, expand_param=True):
         """
         register function which will process the task in specified task_type
         """
