@@ -36,7 +36,7 @@ class TaskController(object):
         load executor from a config file
         """
         with open(config_file, "r") as fobj:
-            return TaskExecutor(yaml.load(fobj.read())["task"], loop=loop)
+            return TaskController(yaml.load(fobj.read())["task"], loop=loop)
 
     def terminate(self):
         """
