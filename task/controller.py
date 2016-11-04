@@ -22,6 +22,8 @@ class TaskController(object):
         self.log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         self.session = aiohttp.ClientSession(loop=self.loop)
         self.ref_cnt = 0
+        self.terminate_flag = False
+        self.loop.add_signal_handler(2, self.terminate)
 
         fh = logging.FileHandler(self.log_file)
         fh.setLevel(self.log_level)
@@ -35,6 +37,12 @@ class TaskController(object):
         """
         with open(config_file, "r") as fobj:
             return TaskExecutor(yaml.load(fobj.read())["task"], loop=loop)
+
+    def terminate(self):
+        """
+        terminate workers, which will wait running task being done
+        """
+        self.terminate_flag = True
 
     def close(self):
         """

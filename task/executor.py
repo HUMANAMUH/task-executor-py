@@ -28,11 +28,9 @@ class TaskExecutor(TaskController):
         self._expand_arg_opts = dict()
         self.num_worker = config["num_worker"]
         self.exit_when_done = config["exit_when_done"]
-        self.terminate_flag = False
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker * 3) \
             if multi_process is False \
             else concurrent.futures.ProcessPoolExecutor(max_workers=self.num_worker * 3)
-        self.loop.add_signal_handler(2, self.terminate)
 
     @staticmethod
     def load(config_file, loop=None, multi_process=False):
@@ -55,12 +53,6 @@ class TaskExecutor(TaskController):
             return func
 
         return wrapper
-
-    def terminate(self):
-        """
-        terminate workers, which will wait running task being done
-        """
-        self.terminate_flag = True
 
     def close(self):
         """
