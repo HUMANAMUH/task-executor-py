@@ -21,8 +21,8 @@ class TaskExecutor(TaskController):
         "kwargs": {}
     }
 
-    def __init__(self, config, loop=None, multi_process=False):
-        super().__init__(config, loop)
+    def __init__(self, config, multi_process=False):
+        super().__init__(config)
         self._task_mapping = dict()
         self._expand_arg_opts = dict()
         self.num_worker = config["num_worker"]
@@ -32,12 +32,12 @@ class TaskExecutor(TaskController):
             else concurrent.futures.ProcessPoolExecutor(max_workers=self.num_worker * 3)
 
     @staticmethod
-    def load(config_file, loop=None, multi_process=False):
+    def load(config_file, multi_process=False):
         """
         load executor from a config file
         """
         with open(config_file, "r") as fobj:
-            return TaskExecutor(yaml.load(fobj.read())["task"], loop=loop, multi_process=multi_process)
+            return TaskExecutor(yaml.load(fobj.read())["task"], multi_process=multi_process)
 
     def register(self, task_type, expand_param=True):
         """
@@ -66,11 +66,12 @@ class TaskExecutor(TaskController):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    async def run(self):
+    def run(self):
         """
         run all workers, async return when all workers exited
         """
-        await asyncio.gather(*[self.worker(i) for i in range(self.num_worker)])
+        c = asyncio.gather(*[self.worker(i) for i in range(self.num_worker)])
+        return asyncio.ensure_future(c, loop=self.loop)
 
     @async_count
     async def worker(self, i):
@@ -102,8 +103,21 @@ class TaskExecutor(TaskController):
                             res = await wait_concurrent(self.loop, self.executor, func, *opts.get("args", []), **opts.get("kwargs", {}))
                         else:
                             res = await wait_concurrent(self.loop, self.executor, func, opts)
-                        self.logger.debug("res: %s", res)
-                        await self.task_success(task["id"])
+                        if inspect.isawaitable(res):
+                            fut = asyncio.ensure_future(res, self.loop)
+                            def on_complete(future_res):
+                                try:
+                                    res = future_res.result()
+                                    self.logger.debug("res: %s", res)
+                                    self.task_success(task["id"])
+                                except:
+                                    err_trace = traceback.format_exc()
+                                    self.logger.error(err_trace)
+                                    self.task_fail(task["id"], err_trace)
+                            fut.add_done_callback(on_complete)
+                        else:
+                            self.logger.debug("res: %s", res)
+                            await self.task_success(task["id"])
                     except:
                         err_trace = traceback.format_exc()
                         self.logger.error(err_trace)

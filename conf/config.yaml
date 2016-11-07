@@ -8,5 +8,5 @@ task:
     exit_when_done: true
     retry_interval: 3
     retry_limit: 5
-    log_level: INFO
+    log_level: DEBUG
     log_file: log/executor.log

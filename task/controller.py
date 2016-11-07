@@ -6,9 +6,9 @@ from task.common import *
 from task.timeutil import *
 
 class TaskController(object):
-    def __init__(self, config, loop=None):
+    def __init__(self, config):
         self.logger = logger
-        self.loop = loop if loop is not None else asyncio.get_event_loop()
+        self.loop = get_common_event_loop()
         self.config = config
         self.server_url = config["server_url"]
         self.request_timeout = config["request_timeout"]
@@ -23,7 +23,8 @@ class TaskController(object):
         self.session = aiohttp.ClientSession(loop=self.loop)
         self.ref_cnt = 0
         self.terminate_flag = False
-        self.loop.add_signal_handler(2, self.terminate)
+        self.wait_terminate = asyncio.Future()
+        when_terminate(self.terminate)
 
         fh = logging.FileHandler(self.log_file)
         fh.setLevel(self.log_level)
@@ -31,12 +32,12 @@ class TaskController(object):
         logger.addHandler(fh)
 
     @staticmethod
-    def load(config_file, loop=None, multi_process=False):
+    def load(config_file, multi_process=False):
         """
         load executor from a config file
         """
         with open(config_file, "r") as fobj:
-            return TaskController(yaml.load(fobj.read())["task"], loop=loop)
+            return TaskController(yaml.load(fobj.read())["task"])
 
     def terminate(self):
         """

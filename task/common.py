@@ -7,6 +7,23 @@ import functools
 logger = logging.getLogger("task-executor-py")
 logger.propagate = False
 
+__termiate_future = asyncio.Future()
+
+def __terminate_call_back():
+    if not __termiate_future.done():
+        __termiate_future.set_result(True)
+
+def when_terminate(func):
+    __termiate_future.add_done_callback(lambda o: func())
+
+__loop = asyncio.get_event_loop()
+__loop.add_signal_handler(2, __terminate_call_back)
+
+def get_common_event_loop():
+    return __loop
+
+def run_until(*coroutines):
+    __loop.run_until_complete(asyncio.gather(*coroutines))
 
 class UnexpectedResponceCode(Exception):
     def __init__(self, code):
