@@ -42,6 +42,7 @@ class TaskController(object):
         """
         terminate workers, which will wait running task being done
         """
+        self.logger.info("try task controller terminate")
         self.terminate_flag = True
 
     def close(self):

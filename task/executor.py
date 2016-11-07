@@ -3,7 +3,6 @@ Task Executor
 """
 
 import json
-import functools
 import traceback
 import inspect
 import concurrent.futures
@@ -73,15 +72,6 @@ class TaskExecutor(TaskController):
         """
         await asyncio.gather(*[self.worker(i) for i in range(self.num_worker)])
 
-
-    async def wait_blocking(self, func, *args, **kwargs):
-        """
-        wait a block action
-        """
-        action = functools.partial(func, *args, **kwargs)
-        fut = self.loop.run_in_executor(self.executor, action)
-        return await asyncio.wait_for(fut, None)
-
     @async_count
     async def worker(self, i):
         """
@@ -109,15 +99,9 @@ class TaskExecutor(TaskController):
                     opts = json.loads(task["options"])
                     try:
                         if do_expand is True:
-                            if inspect.iscoroutinefunction(func):
-                                res = await func(*opts.get("args", []), **opts.get("kwargs")) 
-                            else:
-                                res = await self.wait_blocking(func, *opts.get("args", []), **opts.get("kwargs"))
+                            res = await wait_concurrent(self.loop, self.executor, func, *opts.get("args", []), **opts.get("kwargs", {}))
                         else:
-                            if inspect.iscoroutinefunction(func):
-                                res = await func(opts)
-                            else:
-                                res = await self.wait_blocking(func, opts)
+                            res = await wait_concurrent(self.loop, self.executor, func, opts)
                         self.logger.debug("res: %s", res)
                         await self.task_success(task["id"])
                     except:

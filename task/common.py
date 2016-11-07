@@ -1,6 +1,7 @@
 import logging
 import traceback
 import asyncio
+import inspect
 import functools
 
 logger = logging.getLogger("task-executor-py")
@@ -67,3 +68,11 @@ def with_retry(limit=None, interval=None):
                     await asyncio.sleep(retry_interval)
         return wrapped
     return wrapper
+
+async def wait_concurrent(loop, executor, func, *args, **kwargs):
+    if inspect.iscoroutinefunction(func):
+        return await func(*args, **kwargs)
+    else:
+        action = functools.partial(func, *args, **kwargs)
+        fut = loop.run_in_executor(executor, action)
+        return await asyncio.wait_for(fut, None)
