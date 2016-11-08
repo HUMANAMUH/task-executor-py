@@ -4,6 +4,7 @@ from task.data.buffer import BufferedDataProcessor
 from task.timeutil import *
 import logging
 from task import event_loop
+from task.common import *
 
 import random
 
@@ -39,10 +40,9 @@ async def add_hello_task():
 with timer(lambda t: logging.debug("sleep time spend %.3f", t)):
     time.sleep(3)
 
-a = tx.run()
-b = databuffer.run()
+tx.run()
+databuffer.run()
 event_loop.run_until_complete(add_hello_task())
-event_loop.run_until_complete(a)
-event_loop.run_until_complete(b)
+event_loop.run_until_complete(wait_all_task_done())
 databuffer.close()
 tx.close()

@@ -3,6 +3,7 @@ import traceback
 import asyncio
 import inspect
 import functools
+from contextlib import contextmanager
 
 logger = logging.getLogger("task-executor-py")
 logger.propagate = False
@@ -29,26 +30,49 @@ class UnexpectedResponceCode(Exception):
     def __init__(self, code):
         super().__init__("Unexpected responce code: %d" % code)
 
+__ref_cnt = 0
+__all_task_done = asyncio.Future()
+
+def __try_all_task_done(*args):
+    global __all_task_done
+    if __ref_cnt == 0 and __termiate_future.done() and not __all_task_done.done():
+        __all_task_done.set_result(True)
+
+__termiate_future.add_done_callback(__try_all_task_done)
+
+def wait_all_task_done():
+    return __all_task_done
+
 def async_count(crt_f):
     """
     count of async calls, if terminate_falg is True, it will wait all async call finish to exit
     """
     @functools.wraps(crt_f)
-    async def wrapped(self, *args, **kwargs):
+    async def wrapped(*args, **kwargs):
         """
         wrapped async call
         will automatically increase async count when start, and dcrease when exit
         """
-        self.ref_cnt += 1
-        logger.debug("ref_cnt: %d", self.ref_cnt)
-        try:
-            return await crt_f(self, *args, **kwargs)
-        finally:
-            self.ref_cnt -= 1
-            logger.debug("ref_cnt: %d", self.ref_cnt)
-            if self.ref_cnt == 0 and self.terminate_flag is True:
-                self.close()
+        with async_context():
+            return await crt_f(*args, **kwargs)
     return wrapped
+
+@contextmanager
+def async_context():
+    """
+    a async_context will manage ref_count
+    async_context can not break using ctrl-c
+    we have to wait all async_context done
+    """
+    global __ref_cnt
+    global __all_task_done
+    __ref_cnt += 1
+    logger.debug("ref_cnt: %d", __ref_cnt)
+    yield
+    __ref_cnt -= 1
+    logger.debug("ref_cnt: %d", __ref_cnt)
+    if __ref_cnt == 0 and __termiate_future.done() and not __all_task_done.done():
+        __all_task_done.set_result(True)
 
 def with_retry(limit=None, interval=None):
     def wrapper(crt_f):

@@ -21,7 +21,6 @@ class TaskController(object):
         self.log_file = config["log_file"]
         self.log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         self.session = aiohttp.ClientSession(loop=self.loop)
-        self.ref_cnt = 0
         self.terminate_flag = False
         self.wait_terminate = asyncio.Future()
         when_terminate(self.terminate)

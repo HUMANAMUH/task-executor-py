@@ -78,6 +78,7 @@ class BufferedDataProcessor(object):
         c = asyncio.gather(*[self.worker(i) for i in range(self.num_worker)])
         return asyncio.ensure_future(c, loop=self.loop)
 
+    @async_count
     async def worker(self, i):
         while True:
             if self.terminate_flag is True:
@@ -87,7 +88,7 @@ class BufferedDataProcessor(object):
             if data is None:
                 self.logger.debug("worker: no data available, wait...")
                 fut.set_result(True)
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(1)
                 continue
             try:
                 self.logger.debug("worker: process data")

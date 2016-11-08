@@ -104,17 +104,17 @@ class TaskExecutor(TaskController):
                         else:
                             res = await wait_concurrent(self.loop, self.executor, func, opts)
                         if inspect.isawaitable(res):
-                            fut = asyncio.ensure_future(res, self.loop)
-                            def on_complete(future_res):
-                                try:
-                                    res = future_res.result()
-                                    self.logger.debug("res: %s", res)
-                                    self.task_success(task["id"])
-                                except:
-                                    err_trace = traceback.format_exc()
-                                    self.logger.error(err_trace)
-                                    self.task_fail(task["id"], err_trace)
-                            fut.add_done_callback(on_complete)
+                            async def extra_job():
+                                with async_context():
+                                    try:
+                                        in_res = await res
+                                        self.logger.debug("res: %s", in_res)
+                                        self.task_success(task["id"])
+                                    except:
+                                        err_trace = traceback.format_exc()
+                                        self.logger.error(err_trace)
+                                        self.task_fail(task["id"], err_trace)
+                            asyncio.ensure_future(extra_job(), loop=self.loop)
                         else:
                             self.logger.debug("res: %s", res)
                             await self.task_success(task["id"])
