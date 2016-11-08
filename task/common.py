@@ -17,6 +17,7 @@ def __terminate_call_back():
 def when_terminate(func):
     __termiate_future.add_done_callback(lambda o: func())
 
+
 __loop = asyncio.get_event_loop()
 __loop.add_signal_handler(2, __terminate_call_back)
 
@@ -43,6 +44,9 @@ __termiate_future.add_done_callback(__try_all_task_done)
 def wait_all_task_done():
     return __all_task_done
 
+def when_exit(func):
+    __all_task_done.add_done_callback(lambda o: func())
+
 def ref_count_incr(key):
     global __ref_cnt
     __ref_cnt += 1
@@ -52,6 +56,7 @@ def ref_count_decr(key):
     global __ref_cnt
     __ref_cnt -= 1
     logger.debug("ref_count_decr@%s: %d", key, __ref_cnt)
+    __try_all_task_done()
 
 def async_count(crt_f):
     """
@@ -81,8 +86,7 @@ def async_context():
     yield
     __ref_cnt -= 1
     logger.debug("ref_cnt: %d", __ref_cnt)
-    if __ref_cnt == 0 and __termiate_future.done() and not __all_task_done.done():
-        __all_task_done.set_result(True)
+    __try_all_task_done()
 
 def with_retry(limit=None, interval=None):
     def wrapper(crt_f):
