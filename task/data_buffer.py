@@ -12,14 +12,8 @@ class BufferedDataProcessor(object):
         self.futures = list()
         self.data_lock = asyncio.Lock()
         self.num_worker = num_worker
-        self.terminate_flag = False
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=num_worker)
-        when_terminate(self.terminate)
 
-    def terminate(self):
-        self.logger.info("try buffered data processor terminate")
-        self.terminate_flag = True
-    
     def close(self):
         self.executor.shutdown(wait=True)
 
@@ -78,14 +72,10 @@ class BufferedDataProcessor(object):
         c = asyncio.gather(*[self.worker(i) for i in range(self.num_worker)])
         return asyncio.ensure_future(c, loop=self.loop)
 
-    @async_count
     async def worker(self, i):
         while True:
             data, fut = await self.pop_data()
             if data is None:
-                if self.terminate_flag is True:
-                    self.logger.info("buffer worker(%d) terminated", i)
-                    return
                 self.logger.debug("worker: no data available, wait...")
                 fut.set_result(True)
                 await asyncio.sleep(1)

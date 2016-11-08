@@ -43,6 +43,16 @@ __termiate_future.add_done_callback(__try_all_task_done)
 def wait_all_task_done():
     return __all_task_done
 
+def ref_count_incr(key):
+    global __ref_cnt
+    __ref_cnt += 1
+    logger.debug("ref_count_incr@%s: %d", key, __ref_cnt)
+
+def ref_count_decr(key):
+    global __ref_cnt
+    __ref_cnt -= 1
+    logger.debug("ref_count_decr@%s: %d", key, __ref_cnt)
+
 def async_count(crt_f):
     """
     count of async calls, if terminate_falg is True, it will wait all async call finish to exit

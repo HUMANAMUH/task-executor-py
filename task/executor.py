@@ -30,6 +30,15 @@ class TaskExecutor(TaskController):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker * 3) \
             if multi_process is False \
             else concurrent.futures.ProcessPoolExecutor(max_workers=self.num_worker * 3)
+        self.terminate_flag = False
+        when_terminate(self.terminate)
+
+    def terminate(self):
+        """
+        terminate workers, which will wait running task being done
+        """
+        self.logger.info("try task controller terminate")
+        self.terminate_flag = True
 
     @staticmethod
     def load(config_file, multi_process=False):
@@ -104,16 +113,18 @@ class TaskExecutor(TaskController):
                         else:
                             res = await wait_concurrent(self.loop, self.executor, func, opts)
                         if inspect.isawaitable(res):
+                            ref_count_incr("extra_job")
                             async def extra_job():
-                                with async_context():
-                                    try:
-                                        in_res = await res
-                                        self.logger.debug("res: %s", in_res)
-                                        self.task_success(task["id"])
-                                    except:
-                                        err_trace = traceback.format_exc()
-                                        self.logger.error(err_trace)
-                                        self.task_fail(task["id"], err_trace)
+                                try:
+                                    in_res = await res
+                                    self.logger.debug("res: %s", in_res)
+                                    self.task_success(task["id"])
+                                except:
+                                    err_trace = traceback.format_exc()
+                                    self.logger.error(err_trace)
+                                    self.task_fail(task["id"], err_trace)
+                                finally:
+                                    ref_count_decr("extra_job")
                             asyncio.ensure_future(extra_job(), loop=self.loop)
                         else:
                             self.logger.debug("res: %s", res)
