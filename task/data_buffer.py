@@ -81,11 +81,11 @@ class BufferedDataProcessor(object):
     @async_count
     async def worker(self, i):
         while True:
-            if self.terminate_flag is True:
-                self.logger.info("buffer worker(%d) terminated", i)
-                return
             data, fut = await self.pop_data()
             if data is None:
+                if self.terminate_flag is True:
+                    self.logger.info("buffer worker(%d) terminated", i)
+                    return
                 self.logger.debug("worker: no data available, wait...")
                 fut.set_result(True)
                 await asyncio.sleep(1)
