@@ -1,4 +1,6 @@
 import time
+import inspect
+import functools
 from datetime import datetime, time as tm, timedelta
 from contextlib import contextmanager
 
@@ -31,3 +33,19 @@ def timer(action):
     yield
     ed = time.time()
     action(ed - bg)
+
+def with_timer(action):
+    def wrapper(func):
+        if inspect.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def a_func(*args, **kwargs):
+                with timer(action):
+                    return await func(*args, **kwargs)
+            return a_func
+        else:
+            @functools.wraps(func)
+            def wrapped(*args, **kwargs):
+                with timer(action):
+                    return func(*args, **kwargs)
+            return wrapped
+    return wrapper
