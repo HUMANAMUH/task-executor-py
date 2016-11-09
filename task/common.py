@@ -101,7 +101,7 @@ def with_retry(limit=None, interval=None):
             retry_interval = \
                 exec_self.retry_interval if exec_self.retry_interval is not None else interval
             while limit is None or try_count < retry_limit:
-                if exec_self is not None and exec_self.terminate_flag is True:
+                if is_terminated():
                     return None
                 try_count += 1
                 try:
