@@ -118,11 +118,11 @@ class TaskExecutor(TaskController):
                                 try:
                                     in_res = await res
                                     self.logger.debug("res: %s", in_res)
-                                    self.task_success(task["id"])
+                                    await self.task_success(task["id"])
                                 except:
                                     err_trace = traceback.format_exc()
                                     self.logger.error(err_trace)
-                                    self.task_fail(task["id"], err_trace)
+                                    await self.task_fail(task["id"], err_trace)
                                 finally:
                                     ref_count_decr("extra_job")
                             asyncio.ensure_future(extra_job(), loop=self.loop)
