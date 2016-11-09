@@ -17,6 +17,9 @@ def __terminate_call_back():
 def when_terminate(func):
     __termiate_future.add_done_callback(lambda o: func())
 
+def is_terminated():
+    return __termiate_future.done()
+
 
 __loop = asyncio.get_event_loop()
 __loop.add_signal_handler(2, __terminate_call_back)
