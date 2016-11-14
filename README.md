@@ -5,7 +5,7 @@
 ```bash
 pip install git+https://github.com/HUMANAMUH/task-executor-py.git#egg=humanamuh-task-executor
 #optional
-pip install cchardet aiohttp
+pip install cchardet aiodns
 ```
 
 ### 使用
