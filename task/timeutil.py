@@ -4,6 +4,8 @@ import functools
 from datetime import datetime, time as tm, timedelta
 from contextlib import contextmanager
 
+one_day = timedelta(days=1)
+
 def timestamp_to_datetime(nano_time):
     return datetime.fromtimestamp(nano_time * 1e-3)
 
@@ -20,9 +22,14 @@ def get_date(dt):
     return date_to_datetime(dt.date())
 
 def date_range(start, end, step_days=1):
+    '''
+    last day will be returned seperated
+    '''
+    oend = end
+    end = oend - one_day
     step = timedelta(days=step_days)
     base = [start + step * i for i in range(0, (end - start) // step + 1)]
-    return [(b, b + step if b + step <= end else end) for b in base]
+    return [(b, b + step if b + step <= end else end) for b in base] + ([(oend, oend)] if oend >= start else [])
 
 @contextmanager
 def timer(action):
