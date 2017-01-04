@@ -35,17 +35,17 @@ class TaskController(object):
         with open(config_file, "r") as fobj:
             return TaskController(yaml.load(fobj.read())["task"])
 
-    def close(self):
+    async def close(self):
         """
         shutdown this executor
         """
-        self.session.close()
+        await self.session.close()
 
-    def __enter__(self):
+    async def __aenter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
     
     async def post_json(self, path, obj):
         """
