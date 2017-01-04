@@ -7,6 +7,7 @@ import traceback
 import inspect
 import concurrent.futures
 import asyncio
+import aiohttp
 import yaml
 from task.controller import TaskController
 from task.common import *
@@ -21,8 +22,8 @@ class TaskExecutor(TaskController):
         "kwargs": {}
     }
 
-    def __init__(self, config, multi_process=False):
-        super().__init__(config)
+    def __init__(self, config, session, multi_process=False):
+        super().__init__(config, session)
         self._task_mapping = dict()
         self._expand_arg_opts = dict()
         self.num_worker = config["num_worker"]
@@ -41,12 +42,13 @@ class TaskExecutor(TaskController):
         self.terminate_flag = True
 
     @staticmethod
-    def load(config_file, multi_process=False):
+    async def load(config_file, multi_process=False):
         """
         load executor from a config file
         """
+        session = await aiohttp.ClientSession(loop=get_common_event_loop())
         with open(config_file, "r") as fobj:
-            return TaskExecutor(yaml.load(fobj.read())["task"], multi_process=multi_process)
+            return TaskExecutor(yaml.load(fobj.read())["task"], session, multi_process=multi_process)
 
     def register(self, task_type, expand_param=True):
         """
