@@ -6,9 +6,9 @@ from task.common import *
 from task.timeutil import *
 
 class TaskController(object):
-    def __init__(self, config, session):
+    def __init__(self, config):
         self.logger = logger
-        self.loop = session._loop
+        self.loop = get_common_event_loop()
         self.config = config
         self.server_url = config["server_url"]
         self.request_timeout = config["request_timeout"]
@@ -20,7 +20,7 @@ class TaskController(object):
         self.log_level = config["log_level"]
         self.log_file = config["log_file"]
         self.log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        self.session = session
+        self.session = aiohttp.ClientSession(loop=self.loop)
 
         fh = logging.FileHandler(self.log_file)
         fh.setLevel(self.log_level)
@@ -28,26 +28,25 @@ class TaskController(object):
         logger.addHandler(fh)
 
     @staticmethod
-    async def load(config_file, multi_process=False):
+    def load(config_file, multi_process=False):
         """
         load executor from a config file
         """
-        session = await aiohttp.ClientSession(loop=get_common_event_loop())
         with open(config_file, "r") as fobj:
-            return TaskController(yaml.load(fobj.read())["task"], session)
+            return TaskController(yaml.load(fobj.read())["task"])
 
-    async def close(self):
+    def close(self):
         """
         shutdown this executor
         """
-        await self.session.close()
+        self.session.close()
 
-    async def __aenter__(self):
+    def __enter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.close()
-
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+    
     async def post_json(self, path, obj):
         """
         post a json to server, return async json result
