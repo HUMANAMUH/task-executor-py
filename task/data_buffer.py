@@ -55,6 +55,8 @@ class BufferedDataProcessor(object):
             else:
                 if self.f_combine is not None:
                     self.data = self.f_combine(self.data, data)
+                else:
+                    self.logger.warning("NO COMBINE OP: Data may lost!!!")
             fut = asyncio.Future()
             self.futures.append(fut)
         fut.add_done_callback(lambda o: self.logger.debug("proc_data_done"))
