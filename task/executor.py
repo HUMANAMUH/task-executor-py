@@ -64,18 +64,18 @@ class TaskExecutor(TaskController):
 
         return wrapper
 
-    def close(self):
+    async def close(self):
         """
         shutdown this executor
         """
-        self.session.close()
-        self.executor.shutdown(wait=True)
+        await self.session.close()
+        self.executor.shutdown(wait=False)
 
-    def __enter__(self):
+    async def __aenter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
+    async def __exit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
 
     def run(self):
         """
