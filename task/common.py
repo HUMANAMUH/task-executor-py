@@ -63,7 +63,7 @@ def ref_count_decr(key):
 
 def async_count(crt_f):
     """
-    count of async calls, if terminate_falg is True, it will wait all async call finish to exit
+    count of async calls, if terminate_falg == True, it will wait all async call finish to exit
     """
     @functools.wraps(crt_f)
     async def wrapped(*args, **kwargs):

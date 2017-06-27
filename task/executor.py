@@ -28,7 +28,7 @@ class TaskExecutor(TaskController):
         self.num_worker = config["num_worker"]
         self.exit_when_done = config["exit_when_done"]
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_worker * 3) \
-            if multi_process is False \
+            if multi_process == False \
             else concurrent.futures.ProcessPoolExecutor(max_workers=self.num_worker * 3)
         self.terminate_flag = False
         when_terminate(self.terminate)
@@ -89,7 +89,7 @@ class TaskExecutor(TaskController):
         """
         self.logger.info("worker(%d) started", i)
         while True:
-            if self.terminate_flag is True:
+            if self.terminate_flag == True:
                 self.logger.info("worker(%d) terminated", i)
                 return
             tasks = await self.task_fetch()
@@ -108,7 +108,7 @@ class TaskExecutor(TaskController):
                     do_expand = self._expand_arg_opts.get(task["type"], False)
                     opts = json.loads(task["options"])
                     try:
-                        if do_expand is True:
+                        if do_expand == True:
                             res = await wait_concurrent(self.loop, self.executor, func, *opts.get("args", []), **opts.get("kwargs", {}))
                         else:
                             res = await wait_concurrent(self.loop, self.executor, func, opts)
